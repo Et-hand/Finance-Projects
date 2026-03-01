@@ -1,0 +1,73 @@
+
+"""
+The price of an option is just price = f(S, K, T, r, sigma).
+To find sigma, we need to solve the equation f(S, K, T, r, sigma) - market_price = 0.
+That means that we need to find the roots of the equation. But because there is no direct function to find the roots, we need to use numerical methods.
+
+"""
+
+
+def implied_volatility(market_price, S, K, T, r, option_type='call', tol=1e-6, max_iter=100):
+    sigma = math.sqrt((2 * math.pi) / T) * (market_price / S)     # Initial Guess (Manaster-Koehler seed for SPX)
+
+    for i in range(max_iter):
+        # If sigma leaves bounds, go to Bisection immediately
+        if not (0.0001 < sigma < 5.0):
+            return implied_volatility_bisection(market_price, S, K, T, r, sigma, option_type, tol, max_iter)
+        
+        if option_type == 'call':
+            price = call(S, K, T, r, sigma)
+        else:
+            price = put(S, K, T, r, sigma)
+            
+        vega_value = vega(S, K, T, r, sigma)
+        price_diff = price - market_price
+        
+        if abs(price_diff) < tol:
+            return sigma
+            
+        # If Vega is too flat, go to Bisection
+        if abs(vega_value) < 1e-10:
+            return implied_volatility_bisection(market_price, S, K, T, r, sigma, option_type, tol, max_iter)
+            
+        sigma -= price_diff / vega_value
+
+    # If no convergence, use  final guess to warm-start bisection
+    return implied_volatility_bisection(market_price, S, K, T, r, sigma, option_type, tol, max_iter)
+
+
+def implied_volatility_bisection(market_price, S, K, T, r, sigma_guess, option_type='call', tol=1e-6, max_iter=100):
+    low = 0.0001
+    high = 5.0
+    
+    # Warm start
+    # Shrink search space to speed up bisection if Newton-Raphson guess is reasonable
+    if 0.0001 < sigma_guess < 5.0:
+        if option_type == 'call':
+            price_at_guess = call(S, K, T, r, sigma_guess)
+        else:
+            price_at_guess = put(S, K, T, r, sigma_guess)
+            
+        if price_at_guess > market_price:
+            high = sigma_guess  # Guess was too high, it becomes our new ceiling
+        else:
+            low = sigma_guess   # Guess was too low, it becomes our new floor
+
+    # Normal Bisection
+    for i in range(max_iter):
+        mid = (low + high) / 2
+        
+        if option_type == 'call':
+            price = call(S, K, T, r, mid)
+        else:
+            price = put(S, K, T, r, mid)
+            
+        if abs(price - market_price) < tol:
+            return mid
+        
+        if price > market_price:
+            high = mid
+        else:
+            low = mid
+            
+    return (low + high) / 2
